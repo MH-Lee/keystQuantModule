@@ -7,6 +7,7 @@ plt.rcParams["figure.figsize"] = (12, 6)
 # 그래프에서 마이너스 폰트 깨지는 문제에 대한 대처
 mpl.rcParams['axes.unicode_minus'] = False
 import redis
+import requests
 
 DATA_MAPPER = {
     'index_tickers': 'INDEX_TICKERS',
@@ -102,10 +103,11 @@ MARKET_CODES = {
 class KeystQuant(object):
 
     def __init__(self):
-        self.cache_ip = '198.13.60.78'
+        self.cache_ip = '198.13.60.19'
         self.cache_pw = 'da56038fa453c22d2c46e83179126e97d4d272d02ece83eb83a97357e842d065'
 
         self.r = redis.StrictRedis(host=self.cache_ip, port=6379, password=self.cache_pw)
+        self.mkcap_url = 'http://45.76.202.71:3000/api/v1/stocks/mktcap/?date=20181008&page={}'
 
         # redis keys
         self.KOSPI_INDEX = 'I.001_INDEX'
@@ -158,24 +160,49 @@ class KeystQuant(object):
         print('SIZE: ' + ' '.join(str(i) for i in size))
         print('STYLE: ' + ' '.join(str(i) for i in style))
         print('INDUSTRY: ' + ' '.join(str(i) for i in industry))
-
         return bm, size, style, industry
+
 
     def make_index_data(self, redis_client, index_list):
         index_data_dict = {}  # 딕셔너리 형식으로 저장한다
-
         for index in index_list:
             # 레디스 키값은 I.002_INDEX와 같은 형식이다
             index_key = MARKET_CODES[index] + DATA_MAPPER['index']  # MARKET_CODES 딕셔너리에서 코드를 찾아온다
             index_df = self.get_val(redis_client, index_key)
             index_data_dict[index] = index_df
         return index_data_dict
-    #
+
     def make_series_data(self, data, key, index, columns):
         series_df = data[key][[index, columns]]
         series_df.set_index(index, inplace=True)
         series_df.rename(columns={columns: key}, inplace=True)
         return series_df
+
+    def make_refined_data(self):
+        refined_ticker = []
+        status_code = 200
+        i = 0
+        while True:
+            i += 1
+            req = requests.get(self.mkcap_url.format(i))
+            status_code = req.status_code
+            if status_code == 404:
+                break
+            mkcap_ticker = [r['code'] for r in req.json()['results']]
+            refined_ticker += mkcap_ticker
+        return refined_ticker
+        
+    def make_ticker_data(self, kp_tickers, kd_tickers):
+        refined_ticker = self.make_refined_data()
+        kp_tickers_dict = dict()
+        kd_tickers_dict = dict()
+        kp_tickers_list = [ticker.split('|')[0] for ticker in kp_tickers if ticker.split('|')[0] in refined_ticker]
+        kd_tickers_list = [ticker.split('|')[0] for ticker in kd_tickers if ticker.split('|')[0] in refined_ticker]
+        for ticker in kp_tickers:
+            kp_tickers_dict[ticker.split('|')[0]] = ticker.split('|')[1]
+        for ticker in kd_tickers:
+            kd_tickers_dict[ticker.split('|')[0]] = ticker.split('|')[1]
+        return kp_tickers_list, kd_tickers_list, kp_tickers_dict, kd_tickers_dict
 
     def merge_index_data(self):
         bm, size, style, industry = self.set_index_lists()
@@ -228,15 +255,13 @@ class KeystQuant(object):
         returns = pd.concat([kp_ret, kd_ret, index_ret], axis=1)
         return kp_vol_prc, kd_vol_prc, index_vol_prc, kp_ret, kd_ret, index_ret, ohlcv, volume, vol_prc, returns
 
-    def set_periodic_ret(ohlcv_df, period='M'):
+    def set_periodic_ret(self, data, period='M'):
         ### 인자 설명:
         ### 1. ohlcv_df (pd.DataFrame)
         ### 2. period (str) --> W, M, Q, 6M, A
         ###                     일주일, 한달, 세달, 여섯달, 일년 주기 종가
         ###
         # 인자로 받은 데이터프레임 ohlcv_df의 인덱스를 데이트타임으로 바꿔준다
-        ohlcv_df.index = pd.to_datetime(ohlcv_df.index)
-        periodic_close = ohlcv_df.resample(period).last()
-        pc_ret = periodic_close.pct_change()
-        (1 + pc_ret).cumprod().plot()
-        return pc_ret
+        data.index = pd.to_datetime(data.index)
+        periodic_close = data.resample(period)
+        return periodic_close

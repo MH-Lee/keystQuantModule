@@ -8,10 +8,10 @@ plt.rcParams["figure.figsize"] = (12, 6)
 mpl.rcParams['axes.unicode_minus'] = False
 import redis
 
-from module import keystQuant
+from module.keystQuant import KeystQuant
 from module.keystQuant import DATA_MAPPER, MARKET_CODES
 
-class MarketSignal(keystQuant):
+class MarketSignal(KeystQuant):
 
     def __init__(self):
         super().__init__()
@@ -45,31 +45,42 @@ class MarketSignal(keystQuant):
 
     #### invest_num : 상위 종목 몇개를 조합할 것인것인지 정하는 변수
     #### month_list = [1, 3, 6, 12]
+    #### month_list = "all"은 12개월 평균 momentum
     #### market = ['코스피', '코스닥']
     ####         ['코스피 대형주', '코스피 중형주', '코스피 소형주', '코스닥 대형주', '코스닥 중형주', '코스닥 소형주']
     ####         ['성장주', '가치주', '배당주', '퀄리티주', '사회책임경영주']
     #### mode = ["mom","m_vol","m_volt_vol"]
-    def ms_backtest(self, index_ohlcv, kp_vol_prc, invest_num, month_list, mode, market = "코스피", period="M", rolling=200):
+    def ms_backtest(self, index_ohlcv, vol_prc, mode, invest_num=10, month_list="all", market = "코스피", period="M", rolling=200):
         col_dict = {"mom": "mom", "m_volt": "mom + volt", "m_volt_vol":"mom + volt + volume"}
+        _, _, kp_ticker_dict, kd_ticker_dict = self.make_ticker_data(self.kp_tickers, self.kd_tickers)
+        if type(month_list) == str:
+            month_list = month_list.lower()
         kp = pd.DataFrame(index_ohlcv[market])
         kp.index = pd.to_datetime(kp.index)
-        kp_m_ret = kp.resample(period).last().pct_change().fillna(0)
+        kp_m_ret = self.set_periodic_ret(kp, period="M").last().pct_change().fillna(0)
         kp_m_ret = kp_m_ret.iloc[:-1, :]
+        if market == "코스피":
+            market_ohlcv = self.kp_ohlcv
+            ticker_dict = kp_ticker_dict
+        elif market == "코스닥":
+            market_ohlcv = self.kd_ohlcv
+            ticker_dict = kd_ticker_dict
         invest_num = invest_num
-        for m in mode:
-            for i in month_list:
-                kp_m = self.kp_ohlcv.resample(period).last()
-                kp_m_mom = kp_m.pct_change(i).fillna(0)
-                kp_m_mom_rank = kp_m_mom.T.rank(ascending=False).T
-                kp_m_mom_score = 1 - (kp_m_mom_rank / kp_m_mom_rank.max())
+        if month_list == "all":
+            kp_m = self.set_periodic_ret(market_ohlcv, period="M").last()
+            kp_m_mom = self.dual_momentum(kp_m)
+            kp_m_mom_rank = kp_m_mom.T.rank(ascending=False).T
+            kp_m_mom_score = 1 - (kp_m_mom_rank / kp_m_mom_rank.max())
 
-                kp_m_volt = self.kp_ohlcv.pct_change().rolling(rolling).std().resample('M').last()
-                kp_m_volt_rank = kp_m_volt.T.rank(ascending=True).T
-                kp_m_volt_score = 1 - (kp_m_volt_rank / kp_m_volt_rank.max())
+            kp_m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
+            kp_m_volt_rank = kp_m_volt.T.rank(ascending=True).T
+            kp_m_volt_score = 1 - (kp_m_volt_rank / kp_m_volt_rank.max())
 
-                kp_m_vol_prc = kp_vol_prc.resample(period).mean()
-                kp_m_vol_prc_rank = kp_m_vol_prc.T.rank(ascending=False).T
-                kp_m_vol_prc_score = 1 - (kp_m_vol_prc_rank / kp_m_vol_prc_rank.max())
+            kp_m_vol_prc = self.set_periodic_ret(vol_prc, period="M").mean()
+            kp_m_vol_prc_rank = kp_m_vol_prc.T.rank(ascending=False).T
+            kp_m_vol_prc_score = 1 - (kp_m_vol_prc_rank / kp_m_vol_prc_rank.max())
+            mode_index_dict = dict()
+            for m in mode:
                 if m == "mom":
                     total_score = kp_m_mom_score
                 elif m == "m_volt":
@@ -79,15 +90,55 @@ class MarketSignal(keystQuant):
                 else:
                     print("mom, m_volt, m_volt_vol 중에 선택하시오")
                 total_score_rank = total_score.T.rank(ascending=False).T
+                data_list = total_score_rank.index.tolist()
                 port_yc = []
+                index_dict = dict()
                 for date in range(len(kp_m) - 1):
-                  invest_end_date = date + 1
-                  top_index = total_score_rank.iloc[date]
-                  top_index = top_index[top_index < invest_num + 1].index
-                  invest_return = kp_m.pct_change().iloc[invest_end_date][top_index].mean()
-                  port_yc.append(invest_return)
+                    invest_end_date = date + 1
+                    top_index = total_score_rank.iloc[date]
+                    top_index = top_index[top_index < invest_num + 1].index
+                    invest_return = kp_m.pct_change().iloc[invest_end_date][top_index].mean()
+                    stock_list = [ticker_dict[i] for i in top_index.tolist()]
+                    index_dict[data_list[date]] = stock_list
+                    port_yc.append(invest_return)
                 colname = col_dict[m]
-                kp_m_ret["{}_{}".format(colname, i)] = port_yc
-                ir = self.information_ratio(kp_m_ret["{}_{}".format(colname, i)], kp_m_ret[market])
-                print("{}_{}: {}".format(colname, i, ir))
-        return kp_m_ret
+                mode_index_dict[m] = index_dict
+                kp_m_ret["{}".format(colname)] = port_yc
+                ir = self.information_ratio(kp_m_ret["{}".format(colname)], kp_m_ret[market])
+                print("{}: {}".format(colname, ir))
+        else:
+            for m in mode:
+                for i in month_list:
+                    kp_m = market_ohlcv.resample(period).last()
+                    kp_m_mom = kp_m.pct_change(i).fillna(0)
+                    kp_m_mom_rank = kp_m_mom.T.rank(ascending=False).T
+                    kp_m_mom_score = 1 - (kp_m_mom_rank / kp_m_mom_rank.max())
+
+                    kp_m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
+                    kp_m_volt_rank = kp_m_volt.T.rank(ascending=True).T
+                    kp_m_volt_score = 1 - (kp_m_volt_rank / kp_m_volt_rank.max())
+
+                    kp_m_vol_prc = self.set_periodic_ret(vol_prc, period="M").mean()
+                    kp_m_vol_prc_rank = kp_m_vol_prc.T.rank(ascending=False).T
+                    kp_m_vol_prc_score = 1 - (kp_m_vol_prc_rank / kp_m_vol_prc_rank.max())
+                    if m == "mom":
+                        total_score = kp_m_mom_score
+                    elif m == "m_volt":
+                        total_score = (kp_m_mom_score + kp_m_volt_score) / 2
+                    elif m == "m_volt_vol":
+                        total_score = (kp_m_mom_score + kp_m_volt_score + kp_m_vol_prc_score) / 3
+                    else:
+                        print("mom, m_volt, m_volt_vol 중에 선택하시오")
+                    total_score_rank = total_score.T.rank(ascending=False).T
+                    port_yc = []
+                    for date in range(len(kp_m) - 1):
+                        invest_end_date = date + 1
+                        top_index = total_score_rank.iloc[date]
+                        top_index = top_index[top_index < invest_num + 1].index
+                        invest_return = kp_m.pct_change().iloc[invest_end_date][top_index].mean()
+                        port_yc.append(invest_return)
+                    colname = col_dict[m]
+                    kp_m_ret["{}_{}".format(colname, i)] = port_yc
+                    ir = self.information_ratio(kp_m_ret["{}_{}".format(colname, i)], kp_m_ret[market])
+                    print("{}_{}: {}".format(colname, i, ir))
+        return kp_m_ret, mode_index_dict
