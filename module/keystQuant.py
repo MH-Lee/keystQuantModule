@@ -191,7 +191,7 @@ class KeystQuant(object):
             mkcap_ticker = [r['code'] for r in req.json()['results']]
             refined_ticker += mkcap_ticker
         return refined_ticker
-        
+
     def make_ticker_data(self, kp_tickers, kd_tickers):
         refined_ticker = self.make_refined_data()
         kp_tickers_dict = dict()
@@ -265,3 +265,12 @@ class KeystQuant(object):
         data.index = pd.to_datetime(data.index)
         periodic_close = data.resample(period)
         return periodic_close
+
+    def calc_rank(self,data, ascending=True):
+        # rank 데이터를 구하는 함수
+        return data.T.rank(ascending=False).T
+
+    def calc_score(self, data):
+        # score 데이터를 구하는 함수
+        score = 1 - (data / data.max())
+        return score
