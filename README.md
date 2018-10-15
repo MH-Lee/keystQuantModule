@@ -14,7 +14,7 @@ keystQuant Backtest Module은 5가지 기능을 가지고 있습니다.
 ```{.python}
 from module import market_signal
 from module.market_signal import MarketSignal
-%matplotlib inline
+%matplotlib inlinemd_img/index_ohlcv.jpg
 
 import matplotlib.pyplot as plt
 ms = MarketSignal()
@@ -27,7 +27,7 @@ ms = MarketSignal()
 ```{.python}
 index_ohlcv, index_vol = ms.merge_index_data()
 ```
-![index_ohlcv](./md_img/index_ohlcv.jpg)
+<p align="center"><img width="100%" src="md_img/index_ohlcv.jpg" /></p>
 
 #### 2.  make_ohlcv_df(index_ohlcv, index_vol)
 
