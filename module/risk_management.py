@@ -81,7 +81,7 @@ class RiskMangement(keystQuant):
             if i >= window:
                 max_kelly = kelly['Kelly Criterion MAX'][i]
                 min_kelly = kelly['Kelly Criterion MIN'][i]
-                invest_amt = (kelly['Kelly Criterion'][i] - min_kelly) / (max_kelly - min_kelly) if max_kelly - min_kelly != 0 else 1
+                invest_amt = (kelly['Kelly Criterion'][i] - min_kelly) / (max_kelly - min_kelly) if max_kelly - min_kelly < 0 else 0
 
             if pd.isnull(kelly['Kelly Criterion'][i]):
                 # 캘리 숫자가 없으면 자본금 모두를 투자 (보통 초기 몇개 빼고는 모두 캘리 숫자가 있다)

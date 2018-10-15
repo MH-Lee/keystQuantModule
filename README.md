@@ -44,11 +44,52 @@ kp_vol_prc, kd_vol_prc, index_vol_prc, kp_ret, kd_ret, index_ret, ohlcv, volume,
 
 #### 3. ms_backtest(self, index_ohlcv, vol_prc, mode, invest_num=10, month_list="all", market = "코스피", period="M", rolling=200)
 <br/>
-##### 평균 듀얼 모멘텀
+
+
++ index_ohlcv, volume price 데이터를 넣어주어야 한다.
+
++ mode는 list를 넣어야하고 momentum, momentum + volitality, momentum + volitality + volume_price를 볼지 정할 수 있다.
+	ex) momentum만 보고 싶으면 ["mom"], momentum과  momentum + volitality를 보고싶으면 ["mom", "m_volt"]를 넣으면 된다.
+    ex)  momentum = ["mom"], momentum + volitality = ["m_volt"], momentum + volitality + volume_price = ["mom_volt_vol"]
++ month_list 는 몇 개월 수익률을 볼지 사용자가 정할 수 있다.
+ - "all" : 1개월 ~ 12개월 모멘텀의 평균 수익률을 구해서 개산
+ - "acceler": 1, 3, 6개월 평균 모멘텀을 설정할 수 도 있다. accelerating mome
+ - 사용자가 지정하는 momentum 수익률을 볼 수 있다.
+	ex) 예를 들어서 1개월 3개월을 사용하고 싶으면 month_list = [1,3]을 입력할 수 있다.
+ - invest_num : total_rank가 높은 몇번째 종목까지 투자할지 정할 수 있다. invest_num이 10이면 total_rank가 높은 10종목에 투자한다는 말이다.
+ -  rolling = 변동성의 이동평균의 기준을 정하는 인자이다. 보통 1년 이동평균을 구하므로 200이 기본 설정으로 되어 있다.
+ -  period = 시계열 데이터를 어떤식으로 resample할지 정하는 인자이다. 보통 월단위로 resample 하므로 "M"이 default 값이다.
+
+#### 듀얼 모멘텀(1개월 ~ 12개월 평균)
 
 ```python
-kp_m_reta_all, mode_index_dict = ms.ms_backtest(index_ohlcv, kp_vol_prc, ["mom","m_volt","m_volt_vol"], month_list="all")
+kp_m_ret_all, mode_index_dict = ms.ms_backtest(index_ohlcv, kp_vol_prc, ["mom","m_volt","m_volt_vol"], month_list="all")
 ```
+<p align="center"><img width="100%" src="./md_img/backtest1.JPG" /></p>
+
+
+
+#### 듀얼 모멘텀(사용자 지정)
+```python
+kp_m_ret,mode_index_dict= ms.ms_backtest(index_ohlcv, kp_vol_prc, invest_num = 50, month_list = [6], mode=["mom","m_volt"])
+(1 + kp_m_ret).cumprod().plot()
+```
+<p align="center"><img width="100%" src="./md_img/backtest2.JPG" /></p>
+<p align="center"><img width="50%" src="./md_img/mom_volt.JPG" /></p>
+
+```python
+kp_m_ret,mode_index_dict= ms.ms_backtest(index_ohlcv, kp_vol_prc, invest_num = 50, month_list = [6], mode=["mom","m_volt"])
+(1 + kp_m_ret).cumprod().plot()
+```
+
+
+```python
+import pandas as pd
+data = mode_index_dict['m_volt']
+df1 = pd.DataFrame.from_dict(data, orient='index')
+df1
+```
+<p align="center"><img width="100%" src="./md_img/top10_ticker.JPG" /></p>
 
 ### 2. Risk Management
 ### 3. Defacto(수급분석)

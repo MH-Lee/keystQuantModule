@@ -19,16 +19,28 @@ class MarketSignal(KeystQuant):
     def __init__(self):
         super().__init__()
 
-    def dual_momentum(self, data):
+    def dual_momentum(self, data, mode, month=None):
         # data (pd.DataFrame) --> 한 달을 주기로 resample된 데이터프레임
         # resample 처리가 안 된 상태라면, set_periodic_close() 메소드 사용
-        for i in range(1, 13):
-            momentum = data.pct_change(i)  # 단순 수익률: (P(t) - P(t-i))/P(t-i), P = 종가
-            if i == 1:
-                temp = momentum
-            else:
-                temp += momentum
-        mom = temp / 12  # 위에서 구한 모든 모멘텀값을 더한 후 12로 나눔 (12개월 평균 모멘텀이 된다)
+        if mode == 'all':
+            for i in range(1, 13):
+                momentum = data.pct_change(i)  # 단순 수익률: (P(t) - P(t-i))/P(t-i), P = 종가
+                if i == 1:
+                    temp = momentum
+                else:
+                    temp += momentum
+            mom = temp / 12  # 위에서 구한 모든 모멘텀값을 더한 후 12로 나눔 (12개월 평균 모멘텀이 된다)
+        # accelerating momentum 계산
+        elif mode == 'acceler':
+            for i in [1, 3, 6]:
+                momentum = data.pct_change(i)  # 단순 수익률: (P(t) - P(t-i))/P(t-i), P = 종가
+                if i == 1:
+                    temp = momentum
+                else:
+                    temp += momentum
+            mom = temp / 3  # 위에서 구한 모든 모멘텀값을 더한 후 12로 나눔 (12개월 평균 모멘텀이 된다)
+        else:
+            mom = data.pct_change(month)
         return mom.fillna(0)  # nan은 0으로 처리
 
     def volatility(self, returns_data, window=12):
@@ -46,6 +58,21 @@ class MarketSignal(KeystQuant):
         ir = ir['Excess Return'].mean() / ir['Excess Return'].std()
         return ir
 
+    def make_rank_data(self, market_ohlcv, vol_prc, month_list, period, rolling, month=None):
+        ohlcv_m = self.set_periodic_ret(market_ohlcv, period).last()
+        ohlcv_m_mom = self.dual_momentum(ohlcv_m, month_list, month)
+        ohlcv_m_mom_rank = self.calc_rank(ohlcv_m_mom, False)
+        ohlcv_m_mom_score = self.calc_score(ohlcv_m_mom_rank)
+
+        ohlcv_m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
+        ohlcv_m_volt_rank = self.calc_rank(ohlcv_m_volt, True)
+        ohlcv_m_volt_score = self.calc_score(ohlcv_m_volt_rank)
+
+        m_vol_prc = self.set_periodic_ret(vol_prc, period).mean()
+        m_vol_prc_rank = self.calc_rank(m_vol_prc, False)
+        m_vol_prc_score = self.calc_score(m_vol_prc_rank)
+        return ohlcv_m, ohlcv_m_mom_score, ohlcv_m_volt_score, m_vol_prc_score
+
     #### invest_num : 상위 종목 몇개를 조합할 것인것인지 정하는 변수
     #### month_list = [1, 3, 6, 12]
     #### month_list = "all"은 12개월 평균 momentum
@@ -58,9 +85,9 @@ class MarketSignal(KeystQuant):
         _, _, kp_ticker_dict, kd_ticker_dict = self.make_ticker_data(self.kp_tickers, self.kd_tickers)
         if type(month_list) == str:
             month_list = month_list.lower()
-        kp = pd.DataFrame(index_ohlcv[market])
-        kp.index = pd.to_datetime(kp.index)
-        m_ret = self.set_periodic_ret(kp, period="M").last().pct_change().fillna(0)
+        index_df = pd.DataFrame(index_ohlcv[market])
+        index_df.index = pd.to_datetime(index_df.index)
+        m_ret = self.set_periodic_ret(index_df, period="M").last().pct_change().fillna(0)
         m_ret = m_ret.iloc[:-1, :]
         if market == "코스피":
             market_ohlcv = self.kp_ohlcv
@@ -69,26 +96,26 @@ class MarketSignal(KeystQuant):
             market_ohlcv = self.kd_ohlcv
             ticker_dict = kd_ticker_dict
         invest_num = invest_num
-        if month_list == "all":
-            ohlcv_m = self.set_periodic_ret(market_ohlcv, period="M").last()
-            ohlcv_m_mom = self.dual_momentum(ohlcv_m)
-            ohlcv_m_mom_rank = self.calc_rank(ohlcv_m_mom, False)
-            ohlcv_m_mom_score = self.calc_score(ohlcv_m_mom_rank)
+        if month_list == "all" or month_list == "acceler":
+            ohlcv_m, ohlcv_m_mom_score, ohlcv_m_volt_score, m_vol_prc_score = self.make_rank_data(market_ohlcv, vol_prc, month_list, period, rolling)
+            # ohlcv_m = self.set_periodic_ret(market_ohlcv, period="M").last()
+            # ohlcv_m_mom = self.dual_momentum(ohlcv_m, month_list)
+            # ohlcv_m_mom_rank = self.calc_rank(ohlcv_m_mom, False)
+            # ohlcv_m_mom_score = self.calc_score(ohlcv_m_mom_rank)
+            #
+            # ohlcv_m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
+            # ohlcv_m_volt_rank = self.calc_rank(ohlcv_m_volt, True)
+            # ohlcv_m_volt_score = self.calc_score(ohlcv_m_volt_rank)
+            #
+            # m_vol_prc = self.set_periodic_ret(vol_prc, period="M").mean()
+            # m_vol_prc_rank = self.calc_rank(m_vol_prc, False)
+            # m_vol_prc_score = self.calc_score(m_vol_prc_rank)
 
-            ohlcv_m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
-            ohlcv_m_volt_rank = self.calc_rank(ohlcv_m_volt, True)
-            ohlcv_m_volt_score = self.calc_score(ohlcv_m_volt_rank)
-
-            m_vol_prc = self.set_periodic_ret(vol_prc, period="M").mean()
-            m_vol_prc_rank = self.calc_rank(m_vol_prc, False)
-            m_vol_prc_score = self.calc_score(m_vol_prc_rank)
-
-            if not os.path.exists(directory + '\\data'):
-                os.mkdir(directory + '\\data')
-
-            ohlcv_m_mom_score.to_csv('{}\\m_mom.csv'.format(directory + '\\data'), encoding='utf-8')
-            ohlcv_m_volt_score.to_csv('{}\\m_volt_score.csv'.format(directory + '\\data'), encoding='utf-8')
-            m_vol_prc_score.to_csv('{}\\m_vol_prc_score.csv'.format(directory + '\\data'), encoding='utf-8')
+            # if not os.path.exists(directory + '\\data'):
+            #     os.mkdir(directory + '\\data')
+            # ohlcv_m_mom_score.to_csv('{}\\m_mom.csv'.format(directory + '\\data'), encoding='utf-8')
+            # ohlcv_m_volt_score.to_csv('{}\\m_volt_score.csv'.format(directory + '\\data'), encoding='utf-8')
+            # m_vol_prc_score.to_csv('{}\\m_vol_prc_score.csv'.format(directory + '\\data'), encoding='utf-8')
 
             mode_index_dict = dict()
             for m in mode:
@@ -123,25 +150,25 @@ class MarketSignal(KeystQuant):
             for m in mode:
                 month_list_dict = dict()
                 for i in month_list:
-                    ohlcv_m = self.set_periodic_ret(market_ohlcv, period="M").last()
-                    ohlcv_m_mom = ohlcv_m.pct_change(i).fillna(0)
-                    ohlcv_m_mom_rank = self.calc_rank(ohlcv_m_mom, False)
-                    ohlcv_m_mom_score = self.calc_score(ohlcv_m_mom_rank)
+                    ohlcv_m, ohlcv_m_mom_score, ohlcv_m_volt_score, m_vol_prc_score = self.make_rank_data(market_ohlcv, vol_prc, month_list, period, rolling, month=i)
+                    # ohlcv_m = self.set_periodic_ret(market_ohlcv, period="M").last()
+                    # ohlcv_m_mom = ohlcv_m.pct_change(i).fillna(0)
+                    # ohlcv_m_mom_rank = self.calc_rank(ohlcv_m_mom, False)
+                    # ohlcv_m_mom_score = self.calc_score(ohlcv_m_mom_rank)
+                    #
+                    # ohlcv_m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
+                    # ohlcv_m_volt_rank = self.calc_rank(ohlcv_m_volt, True)
+                    # ohlcv_m_volt_score = self.calc_score(ohlcv_m_volt_rank)
+                    #
+                    # m_vol_prc = self.set_periodic_ret(vol_prc, period="M").mean()
+                    # m_vol_prc_rank = self.calc_rank(m_vol_prc, False)
+                    # m_vol_prc_score = self.calc_score(m_vol_prc_rank)
 
-                    ohlcv_m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
-                    ohlcv_m_volt_rank = self.calc_rank(ohlcv_m_volt, True)
-                    ohlcv_m_volt_score = self.calc_score(ohlcv_m_volt_rank)
-
-                    m_vol_prc = self.set_periodic_ret(vol_prc, period="M").mean()
-                    m_vol_prc_rank = self.calc_rank(m_vol_prc, False)
-                    m_vol_prc_score = self.calc_score(m_vol_prc_rank)
-
-                    if not os.path.exists(directory + '\\data'):
-                        os.mkdir(directory + '\\data')
-
-                    ohlcv_m_mom_score.to_csv('{}\\m_mom_{}_{}.csv'.format(directory + '\\data', m, i), encoding='utf-8')
-                    ohlcv_m_volt_score.to_csv('{}\\m_volt_score_{}_{}.csv'.format(directory + '\\data', m, i), encoding='utf-8')
-                    m_vol_prc_score.to_csv('{}\\m_vol_prc_score_{}_{}.csv'.format(directory + '\\data', m, i), encoding='utf-8')
+                    # if not os.path.exists(directory + '\\data'):
+                    #     os.mkdir(directory + '\\data')
+                    # ohlcv_m_mom_score.to_csv('{}\\m_mom_{}_{}.csv'.format(directory + '\\data', m, i), encoding='utf-8')
+                    # ohlcv_m_volt_score.to_csv('{}\\m_volt_score_{}_{}.csv'.format(directory + '\\data', m, i), encoding='utf-8')
+                    # m_vol_prc_score.to_csv('{}\\m_vol_prc_score_{}_{}.csv'.format(directory + '\\data', m, i), encoding='utf-8')
 
                     if m == "mom":
                         total_score = ohlcv_m_mom_score
