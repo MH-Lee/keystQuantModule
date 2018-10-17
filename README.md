@@ -24,10 +24,6 @@ ms = MarketSignal()
 + bm(코스피, 코스닥), style(가치주, 성장주, 배당주, 퀄리티주, 사회책임경영주), size, indusrty별로 모든 종가데이터와 거래량 데이터를 합친 데이터 프레임을 생성합니다.
 
 ```python
-index_ohlcv, index_vol = ms.merge_index_data()
-```
-<p align="center"><img width="100%" src="./md_img/index_ohlcv.JPG" /></p>
-
 #### 2.  make_ohlcv_df(index_ohlcv, index_vol)
 
 + make_ohlcv_df는 backtesting에 필요한 각종 dataframe을 만드는 함수입니다. 
@@ -48,9 +44,9 @@ kp_vol_prc, kd_vol_prc, index_vol_prc, kp_ret, kd_ret, index_ret, ohlcv, volume,
 
 + index_ohlcv, volume price 데이터를 넣어주어야 한다.
 
-+ mode는 list를 넣어야하고 momentum, momentum + volitality, momentum + volitality + volume_price를 볼지 정할 수 있다.
-	ex) momentum만 보고 싶으면 ["mom"], momentum과  momentum + volitality를 보고싶으면 ["mom", "m_volt"]를 넣으면 된다.
-    ex)  momentum = ["mom"], momentum + volitality = ["m_volt"], momentum + volitality + volume_price = ["mom_volt_vol"]
++ mode는 list를 넣어야하고 momentum, momentum + volatility, momentum + volatility + volume_price를 볼지 정할 수 있다.
+	ex) momentum만 보고 싶으면 ["mom"], momentum과  momentum + volatility를 보고싶으면 ["mom", "m_volt"]를 넣으면 된다.
+    ex)  momentum = ["mom"], momentum + volatility = ["m_volt"], momentum + volatility + volume_price = ["mom_volt_vol"]
 + month_list 는 몇 개월 수익률을 볼지 사용자가 정할 수 있다.
  - "all" : 1개월 ~ 12개월 모멘텀의 평균 수익률을 구해서 개산
  - "acceler": 1, 3, 6개월 평균 모멘텀을 설정할 수 도 있다. accelerating mome

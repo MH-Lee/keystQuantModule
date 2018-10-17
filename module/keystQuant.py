@@ -162,7 +162,6 @@ class KeystQuant(object):
         print('INDUSTRY: ' + ' '.join(str(i) for i in industry))
         return bm, size, style, industry
 
-
     def make_index_data(self, redis_client, index_list):
         index_data_dict = {}  # 딕셔너리 형식으로 저장한다
         for index in index_list:
@@ -204,6 +203,34 @@ class KeystQuant(object):
             kd_tickers_dict[ticker.split('|')[0]] = ticker.split('|')[1]
         return kp_tickers_list, kd_tickers_list, kp_tickers_dict, kd_tickers_dict
 
+    def make_ohlcv_df(self, mode, kp_tickers_list, kd_tickers_list):
+        make_data_start = True
+        if mode == 'kp':
+            tickers_list = kp_tickers_list
+        elif mode == 'kd':
+            tickers_list =  kd_tickers_list
+        else:
+            print('choose kp or kd')
+        for ticker in tickers_list:
+            # OHLCV 데이터 불러오기
+            key = ticker + '_OHLCV'
+            ohlcv = pd.read_msgpack(r.get(key))
+            ohlcv.set_index('date', inplace=True)
+            ohlcv.index = pd.to_datetime(ohlcv.index)
+            ohlcv_df = ohlcv[['adj_prc']]
+            vol_df = ohlcv[['trd_qty']]
+            ohlcv_df.rename({'adj_prc':ticker}, axis='columns', inplace=True)
+            vol_df.rename({'trd_qty':ticker}, axis='columns', inplace=True)
+
+            if make_data_start:
+                total_ohlcv = ohlcv_df
+                total_vol = vol_df
+                make_data_start = False
+            else:
+                total_ohlcv = pd.concat([total_ohlcv, ohlcv_df], axis=1)
+                total_vol = pd.concat([total_vol, vol_df], axis=1)
+        return total_ohlcv, total_vol
+
     def merge_index_data(self):
         bm, size, style, industry = self.set_index_lists()
 
@@ -235,8 +262,8 @@ class KeystQuant(object):
                 index_vol = vol_df
                 make_data_start = False
             else:
-                index_ohlcv = pd.concat([index_ohlcv, ohlcv_df], axis=1)
-                index_vol = pd.concat([index_vol, vol_df], axis=1)
+                index_ohlcv = pd.concat([index_ohlcv, ohlcv_df], axis=1, sort=True)
+                index_vol = pd.concat([index_vol, vol_df], axis=1, sort=True)
         return index_ohlcv, index_vol
 
     def make_ohlcv_df(self, index_ohlcv, index_vol):
