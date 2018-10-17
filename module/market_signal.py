@@ -86,8 +86,7 @@ class MarketSignal(KeystQuant):
             print("mom, m_volt, m_volt_vol 중에 선택하시오")
         return total_score
 
-    def filter_top_stock(ohlcv_m, total_score_rank, invest_num, ticker_dict, m_mom, m_volt, m_vol_prc):
-        start = time.time()
+    def filter_top_stock(self, ohlcv_m, total_score_rank, invest_num, ticker_dict, m_mom, m_volt, m_vol_prc):
         port_yc = []
         index_dict = dict()
         date_list = total_score_rank.index.tolist()
@@ -107,10 +106,8 @@ class MarketSignal(KeystQuant):
                     stock_data_dict[ticker_dict[stock_list[i]]] = score_list
             index_dict[date_list[date]] = stock_data_dict
             port_yc.append(invest_return)
-        end = time.time()
-        print(end - start)
         return port_yc, index_dict
-    #
+    
     # def filter_top_stock(self, ohlcv_m, total_score_rank, invest_num, ticker_dict):
     #     date_list = total_score_rank.index.tolist()
     #     port_yc = []
