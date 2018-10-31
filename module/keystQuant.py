@@ -3,9 +3,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
-plt.rcParams["figure.figsize"] = (12, 6)
-# 그래프에서 마이너스 폰트 깨지는 문제에 대한 대처
-mpl.rcParams['axes.unicode_minus'] = False
 import redis
 import requests
 
@@ -162,6 +159,7 @@ class KeystQuant(object):
         print('INDUSTRY: ' + ' '.join(str(i) for i in industry))
         return bm, size, style, industry
 
+
     def make_index_data(self, redis_client, index_list):
         index_data_dict = {}  # 딕셔너리 형식으로 저장한다
         for index in index_list:
@@ -203,34 +201,6 @@ class KeystQuant(object):
             kd_tickers_dict[ticker.split('|')[0]] = ticker.split('|')[1]
         return kp_tickers_list, kd_tickers_list, kp_tickers_dict, kd_tickers_dict
 
-    def make_ohlcv_df(self, mode, kp_tickers_list, kd_tickers_list):
-        make_data_start = True
-        if mode == 'kp':
-            tickers_list = kp_tickers_list
-        elif mode == 'kd':
-            tickers_list =  kd_tickers_list
-        else:
-            print('choose kp or kd')
-        for ticker in tickers_list:
-            # OHLCV 데이터 불러오기
-            key = ticker + '_OHLCV'
-            ohlcv = pd.read_msgpack(r.get(key))
-            ohlcv.set_index('date', inplace=True)
-            ohlcv.index = pd.to_datetime(ohlcv.index)
-            ohlcv_df = ohlcv[['adj_prc']]
-            vol_df = ohlcv[['trd_qty']]
-            ohlcv_df.rename({'adj_prc':ticker}, axis='columns', inplace=True)
-            vol_df.rename({'trd_qty':ticker}, axis='columns', inplace=True)
-
-            if make_data_start:
-                total_ohlcv = ohlcv_df
-                total_vol = vol_df
-                make_data_start = False
-            else:
-                total_ohlcv = pd.concat([total_ohlcv, ohlcv_df], axis=1)
-                total_vol = pd.concat([total_vol, vol_df], axis=1)
-        return total_ohlcv, total_vol
-
     def merge_index_data(self):
         bm, size, style, industry = self.set_index_lists()
 
@@ -262,8 +232,8 @@ class KeystQuant(object):
                 index_vol = vol_df
                 make_data_start = False
             else:
-                index_ohlcv = pd.concat([index_ohlcv, ohlcv_df], axis=1, sort=True)
-                index_vol = pd.concat([index_vol, vol_df], axis=1, sort=True)
+                index_ohlcv = pd.concat([index_ohlcv, ohlcv_df], axis=1)
+                index_vol = pd.concat([index_vol, vol_df], axis=1)
         return index_ohlcv, index_vol
 
     def make_ohlcv_df(self, index_ohlcv, index_vol):
@@ -293,11 +263,30 @@ class KeystQuant(object):
         periodic_close = data.resample(period)
         return periodic_close
 
-    def calc_rank(self,data, ascending=True):
-        # rank 데이터를 구하는 함수
-        return data.T.rank(ascending=False).T
+    def make_redis_ohlcv_df(self, mode, kp_tickers_list, kd_tickers_list):
+        make_data_start = True
+        if mode == 'kp':
+            tickers_list = kp_tickers_list
+        elif mode == 'kd':
+            tickers_list =  kd_tickers_list
+        else:
+            print('choose kp or kd')
+        for ticker in tickers_list:
+            # OHLCV 데이터 불러오기
+            key = ticker + '_OHLCV'
+            ohlcv = pd.read_msgpack(r.get(key))
+            ohlcv.set_index('date', inplace=True)
+            ohlcv.index = pd.to_datetime(ohlcv.index)
+            ohlcv_df = ohlcv[['adj_prc']]
+            vol_df = ohlcv[['trd_qty']]
+            ohlcv_df.rename({'adj_prc':ticker}, axis='columns', inplace=True)
+            vol_df.rename({'trd_qty':ticker}, axis='columns', inplace=True)
 
-    def calc_score(self, data):
-        # score 데이터를 구하는 함수
-        score = 1 - (data / data.max())
-        return score
+            if make_data_start:
+                total_ohlcv = ohlcv_df
+                total_vol = vol_df
+                make_data_start = False
+            else:
+                total_ohlcv = pd.concat([total_ohlcv, ohlcv_df], axis=1)
+                total_vol = pd.concat([total_vol, vol_df], axis=1)
+        return total_ohlcv, total_vol

@@ -3,9 +3,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
-plt.rcParams["figure.figsize"] = (12, 6)
-# 그래프에서 마이너스 폰트 깨지는 문제에 대한 대처
-mpl.rcParams['axes.unicode_minus'] = False
 import redis
 
 from module import keystQuant
@@ -45,12 +42,16 @@ class RiskMangement(keystQuant):
         kelly.rename(columns={0: 'Excess Return'}, inplace=True)
         kelly['Excess Return MA'] = kelly['Excess Return'].rolling(window).mean() # excess return의 moving average
         kelly['Excess Return MV'] = kelly['Excess Return'].rolling(window).var() # excess return의 moving variance
-        kelly.dropna(axis=0, inplace=True)
+
         kelly_criterion = []
 
         for i in range(len(kelly)):
-            exc_ret_mean = kelly['Excess Return'][:i].mean() if i < window else kelly['Excess Return MA'][i]
-            exc_ret_var = kelly['Excess Return'][:i].var() if i < window else kelly['Excess Return MV'][i]
+            if i == 0:
+                exc_ret_mean = kelly['Excess Return'][i].mean()
+                exc_ret_var = kelly['Excess Return'][i].var()
+            else:
+                exc_ret_mean = kelly['Excess Return'][:i].mean() if i < window else kelly['Excess Return MA'][i]
+                exc_ret_var = kelly['Excess Return'][:i].var() if i < window else kelly['Excess Return MV'][i]
             kelly_ratio = exc_ret_mean / exc_ret_var
             kelly_criterion.append(kelly_ratio)
 
@@ -62,9 +63,22 @@ class RiskMangement(keystQuant):
         invest_ratio = []
 
         for i in range(len(kelly['Kelly Criterion'])):
-            max_kelly = kelly['Kelly Criterion MAX'][i]
-            min_kelly = kelly['Kelly Criterion MIN'][i]
-            invest_amt = (kelly['Kelly Criterion'][i] - min_kelly) / (max_kelly - min_kelly) if max_kelly - min_kelly < 0 else 0
+
+            if i == 0:
+                # 시작은 자본금 전체 투자한다
+                invest_amt = 1
+
+            if i < window:
+                # window보다 작은 인덱스값은 위에서 계산한 max, min이 없기 때문에 따로 rolling으로 데이터를 묶어서 max, min을 계산
+                kelly_nums = kelly['Kelly Criterion'][:i] # 0 부터 현재값까지 모두 묶기
+                max_kelly = kelly_nums.max()
+                min_kelly = kelly_nums.min()
+                invest_amt = (kelly['Kelly Criterion'][i] - min_kelly) / (max_kelly - min_kelly) if max_kelly - min_kelly != 0 else 1
+
+            if i >= window:
+                max_kelly = kelly['Kelly Criterion MAX'][i]
+                min_kelly = kelly['Kelly Criterion MIN'][i]
+                invest_amt = (kelly['Kelly Criterion'][i] - min_kelly) / (max_kelly - min_kelly) if max_kelly - min_kelly != 0 else 1
 
             if pd.isnull(kelly['Kelly Criterion'][i]):
                 # 캘리 숫자가 없으면 자본금 모두를 투자 (보통 초기 몇개 빼고는 모두 캘리 숫자가 있다)
