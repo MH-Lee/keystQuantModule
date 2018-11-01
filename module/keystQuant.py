@@ -274,7 +274,7 @@ class KeystQuant(object):
         for ticker in tickers_list:
             # OHLCV 데이터 불러오기
             key = ticker + '_OHLCV'
-            ohlcv = pd.read_msgpack(r.get(key))
+            ohlcv = pd.read_msgpack(self.r.get(key))
             ohlcv.set_index('date', inplace=True)
             ohlcv.index = pd.to_datetime(ohlcv.index)
             ohlcv_df = ohlcv[['adj_prc']]

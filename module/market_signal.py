@@ -110,7 +110,7 @@ class MarketSignal(KeystQuant):
                     top_index = top_index[top_index < invest_num + 1].index
                     invest_return = m_ohlcv.pct_change().iloc[invest_end_date][top_index].mean()
                     port_yc.append(invest_return)
-                    stock_list = [ticker_dict[i] for i in top_index.tolist()]
+                    stock_list = [i for i in top_index.tolist()]
                     if len(stock_list) == 0:
                         print("empty list")
                         continue
@@ -119,11 +119,9 @@ class MarketSignal(KeystQuant):
                     m_vol_prc_check = m_vol_prc_rank.loc[date_list[date], stock_list]
                     stock_data_dict = dict()
                     for j in range(len(stock_list)):
-                        print(m_mom_check.values[j], m_volt_check.values[j], m_vol_prc_check.values[j])
                         score_list = [m_mom_check.values[j], m_volt_check.values[j], m_vol_prc_check[j]]
                         stock_data_dict[ticker_dict[stock_list[j]]] = score_list
                     index_dict[date_list[date]] = stock_data_dict
-                    month_list_dict[i] = index_dict
                 mode_index_dict[m] = index_dict
                 colname = col_dict[m]
                 m_ret["{}".format(colname)] = port_yc
@@ -173,7 +171,6 @@ class MarketSignal(KeystQuant):
                         m_vol_prc_check = m_vol_prc_rank.loc[date_list[date], stock_list]
                         stock_data_dict = dict()
                         for j in range(len(stock_list)):
-                            print(m_mom_check.values[j], m_volt_check.values[j], m_vol_prc_check.values[j])
                             score_list = [m_mom_check.values[j], m_volt_check.values[j], m_vol_prc_check[j]]
                             stock_data_dict[ticker_dict[stock_list[j]]] = score_list
                         index_dict[date_list[date]] = stock_data_dict

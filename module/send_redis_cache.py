@@ -27,6 +27,8 @@ print(len(kp_tickers_list), len(kd_tickers_list))
 kp_ohlcv, kp_vol = keystq.make_redis_ohlcv_df('kp', kp_tickers_list, kd_tickers_list)
 kd_ohlcv, kd_vol = keystq.make_redis_ohlcv_df('kd', kp_tickers_list, kd_tickers_list)
 
+print(kp_ohlcv.shape, kd_ohlcv.shape, kp_vol.shape, kd_vol.shape)
+
 r.set(KOSPI_OHLCV, kp_ohlcv.to_msgpack(compress='zlib'))
 r.set(KOSDAQ_OHLCV, kd_ohlcv.to_msgpack(compress='zlib'))
 r.set(KOSPI_VOL, kp_vol.to_msgpack(compress='zlib'))
