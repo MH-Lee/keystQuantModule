@@ -53,6 +53,32 @@ class MarketSignal(KeystQuant):
         ir = ir['Excess Return'].mean() / ir['Excess Return'].std()
         return ir
 
+    def calc_each_score(self, market_ohlcv, vol_prc, period, month_list, rolling):
+        m_ohlcv = self.set_periodic_ret(market_ohlcv, period).last()
+        m_mom = self.dual_momentum(m_ohlcv, month_list)
+        m_mom_rank = m_mom.T.rank(ascending=False).T
+        m_mom_score = 1 - (m_mom_rank / m_mom_rank.max())
+
+        m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
+        m_volt_rank = m_volt.T.rank(ascending=True).T
+        m_volt_score = 1 - (m_volt_rank / m_volt_rank.max())
+
+        m_vol_prc = self.set_periodic_ret(vol_prc, period).mean()
+        m_vol_prc_rank = m_vol_prc.T.rank(ascending=False).T
+        m_vol_prc_score = 1 - (m_vol_prc_rank / m_vol_prc_rank.max())
+        return m_ohlcv, m_mom_rank, m_volt_rank, m_vol_prc_rank, m_mom_score, m_volt_score, m_vol_prc_score
+
+    def sum_each_score(self, m, m_mom_score, m_volt_score, m_vol_prc_score, mw, vw, vpw):
+        if m == "mom":
+            total_score = m_mom_score
+        elif m == "m_volt":
+            total_score = (m_mom_score + m_volt_score) / 2
+        elif m == "m_volt_vol":
+            total_score = (mw*m_mom_score + vw*m_volt_score + vw*m_vol_prc_score) / 3
+        else:
+            print("mom, m_volt, m_volt_vol 중에 선택하시오")
+        return total_score
+
     #### invest_num : 상위 종목 몇개를 조합할 것인것인지 정하는 변수
     #### month_list = [1, 3, 6, 12]
     #### month_list = "all"은 12개월 평균 momentum, acceler = 1,3,6 평균
@@ -77,28 +103,10 @@ class MarketSignal(KeystQuant):
             ticker_dict = kd_ticker_dict
         invest_num = invest_num
         if month_list == "all" or month_list == "acceler":
-            m_ohlcv = self.set_periodic_ret(market_ohlcv, period).last()
-            m_mom = self.dual_momentum(m_ohlcv, month_list)
-            m_mom_rank = m_mom.T.rank(ascending=False).T
-            m_mom_score = 1 - (m_mom_rank / m_mom_rank.max())
-
-            m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
-            m_volt_rank = m_volt.T.rank(ascending=True).T
-            m_volt_score = 1 - (m_volt_rank / m_volt_rank.max())
-
-            m_vol_prc = self.set_periodic_ret(vol_prc, period).mean()
-            m_vol_prc_rank = m_vol_prc.T.rank(ascending=False).T
-            m_vol_prc_score = 1 - (m_vol_prc_rank / m_vol_prc_rank.max())
+            m_ohlcv, m_mom_rank, m_volt_rank, m_vol_prc_rank, m_mom_score, m_volt_score, m_vol_prc_score = self.calc_each_score(market_ohlcv, vol_prc, period, month_list, rolling)
             mode_index_dict = dict()
             for m in mode:
-                if m == "mom":
-                    total_score = m_mom_score
-                elif m == "m_volt":
-                    total_score = (m_mom_score + m_volt_score) / 2
-                elif m == "m_volt_vol":
-                    total_score = (mw*m_mom_score + vw*m_volt_score + vw*m_vol_prc_score) / 3
-                else:
-                    print("mom, m_volt, m_volt_vol 중에 선택하시오")
+                total_score = self.sum_each_score(m, m_mom_score, m_volt_score, m_vol_prc_score, mw, vw, vpw)
                 total_score_rank = total_score.T.rank(ascending=False).T
                 data_list = total_score_rank.index.tolist()
                 port_yc = []
@@ -132,26 +140,8 @@ class MarketSignal(KeystQuant):
             for m in mode:
                 month_list_dict = dict()
                 for i in month_list:
-                    m_ohlcv = self.set_periodic_ret(market_ohlcv, period).last()
-                    m_mom = self.dual_momentum(m_ohlcv, i)
-                    m_mom_rank = m_mom.T.rank(ascending=False).T
-                    m_mom_score = 1 - (m_mom_rank / m_mom_rank.max())
-
-                    m_volt = self.volatility(market_ohlcv.pct_change(), rolling).resample('M').last()
-                    m_volt_rank = m_volt.T.rank(ascending=True).T
-                    m_volt_score = 1 - (m_volt_rank / m_volt_rank.max())
-
-                    m_vol_prc = self.set_periodic_ret(vol_prc, period="M").mean()
-                    m_vol_prc_rank = m_vol_prc.T.rank(ascending=False).T
-                    m_vol_prc_score = 1 - (m_vol_prc_rank / m_vol_prc_rank.max())
-                    if m == "mom":
-                        total_score = m_mom_score
-                    elif m == "m_volt":
-                        total_score = (m_mom_score + m_volt_score) / 2
-                    elif m == "m_volt_vol":
-                        total_score = (mw*m_mom_score + vw*m_volt_score + vw*m_vol_prc_score) / 3
-                    else:
-                        print("mom, m_volt, m_volt_vol 중에 선택하시오")
+                    m_ohlcv, m_mom_rank, m_volt_rank, m_vol_prc_rank, m_mom_score, m_volt_score, m_vol_prc_score = self.calc_each_score(market_ohlcv, vol_prc, period, i, rolling)
+                    total_score = self.sum_each_score(m, m_mom_score, m_volt_score, m_vol_prc_score, mw, vw, vpw)
                     total_score_rank = total_score.T.rank(ascending=False).T
                     port_yc = []
                     index_dict = dict()
