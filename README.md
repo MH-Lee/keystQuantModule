@@ -71,7 +71,7 @@ kp_m_ret,mode_index_dict= ms.ms_backtest(index_ohlcv, kp_vol_prc, invest_num = 5
 (1 + kp_m_ret).cumprod().plot()
 ```
 <p align="center"><img width="100%" src="./md_img/backtest2.JPG" /></p>
-<p align="center"><img width="50%" src="./md_img/mom_volt.JPG" /></p>
+<p align="center"><img width="50%" src="./md_img/graph1.JPG" /></p>
 
 ```python
 kp_m_ret,mode_index_dict= ms.ms_backtest(index_ohlcv, kp_vol_prc, invest_num = 50, month_list = [6], mode=["mom","m_volt"])
