@@ -3,8 +3,9 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
-import redis
 import requests
+
+from module.cache import RedisClient
 
 DATA_MAPPER = {
     'index_tickers': 'INDEX_TICKERS',
@@ -100,34 +101,38 @@ MARKET_CODES = {
 class KeystQuant(object):
 
     def __init__(self):
-        self.cache_ip = '198.13.60.19'
-        self.cache_pw = 'da56038fa453c22d2c46e83179126e97d4d272d02ece83eb83a97357e842d065'
-
-        self.r = redis.StrictRedis(host=self.cache_ip, port=6379, password=self.cache_pw)
-        self.mkcap_url = 'http://45.76.202.71:3000/api/v1/stocks/mktcap/?date=20181008&page={}'
+        self.redis = RedisClient()
+        self.mkcap_url = 'http://45.76.202.71:3000/api/v1/stocks/mktcap/?date={}&page={}'
+        self.recent_date = 'http://45.76.202.71:3000/api/v1/stocks/mktcap/?code=005930&ordering=-date'
 
         # redis keys
         self.KOSPI_INDEX = 'I.001_INDEX'
 
         self.KOSPI_TICKERS = 'KOSPI_TICKERS'
         self.KOSDAQ_TICKERS = 'KOSDAQ_TICKERS'
+        self.ETF_TICKERS = 'ETF_TICKERS'
+        self.ETF_FULL_TICKERS = 'ETF_FULL_TICKERS'
 
         self.KOSPI_OHLCV = 'KOSPI_OHLCV'
         self.KOSDAQ_OHLCV = 'KOSDAQ_OHLCV'
+        self.ETF_OHLCV = 'ETF_OHLCV'
 
         self.KOSPI_VOL = 'KOSPI_VOL'
         self.KOSDAQ_VOL = 'KOSDAQ_VOL'
+        self.ETF_VOL = 'ETF_VOL'
 
-        self.kp_tickers = [ticker.decode() for ticker in self.r.lrange(self.KOSPI_TICKERS, 0 ,-1)]
-        self.kd_tickers = [ticker.decode() for ticker in self.r.lrange(self.KOSDAQ_TICKERS, 0 ,-1)]
-        self.tickers = self.kp_tickers + self.kd_tickers
+        self.kp_tickers = [ticker.decode() for ticker in self.redis.redis_client.lrange(self.KOSPI_TICKERS, 0 ,-1)]
+        self.kd_tickers = [ticker.decode() for ticker in self.redis.redis_client.lrange(self.KOSDAQ_TICKERS, 0 ,-1)]
+        self.etf_tickers = [ticker.decode() for ticker in self.redis.redis_client.lrange(self.ETF_TICKERS, 0 ,-1)]
 
         # 종가/거래량 데이터 불러오기
-        self.kp_ohlcv = pd.read_msgpack(self.r.get(self.KOSPI_OHLCV))
-        self.kd_ohlcv = pd.read_msgpack(self.r.get(self.KOSDAQ_OHLCV))
+        self.kp_ohlcv = self.redis.get_df(self.KOSPI_OHLCV)
+        self.kd_ohlcv = self.redis.get_df(self.KOSDAQ_OHLCV)
+        self.etf_ohlcv = self.redis.get_df(self.ETF_OHLCV)
 
-        self.kp_vol = pd.read_msgpack(self.r.get(self.KOSPI_VOL))
-        self.kd_vol = pd.read_msgpack(self.r.get(self.KOSDAQ_VOL))
+        self.kp_vol = self.redis.get_df(self.KOSPI_VOL)
+        self.kd_vol = self.redis.get_df(self.KOSDAQ_VOL)
+        self.etf_vol = self.redis.get_df(self.ETF_VOL)
         print("ready!")
 
     def get_val(self, redis_client, key):
@@ -176,12 +181,14 @@ class KeystQuant(object):
         return series_df
 
     def make_refined_data(self):
+        samsung_ohlcv = self.redis.get_df('005930_OHLCV')
+        recent_date = int(samsung_ohlcv.tail(1)['date'])
         refined_ticker = []
         status_code = 200
         i = 0
         while True:
             i += 1
-            req = requests.get(self.mkcap_url.format(i))
+            req = requests.get(self.mkcap_url.format(recent_date, i))
             status_code = req.status_code
             if status_code == 404:
                 break
@@ -189,25 +196,33 @@ class KeystQuant(object):
             refined_ticker += mkcap_ticker
         return refined_ticker
 
-    def make_ticker_data(self, kp_tickers, kd_tickers):
-        refined_ticker = self.make_refined_data()
+    def make_ticker_data(self, kp_tickers, kd_tickers, etf_tickers, mode=None):
         kp_tickers_dict = dict()
         kd_tickers_dict = dict()
+        etf_tickers_dict = dict()
+        etf_tickers_list = [ticker.split('|')[0] for ticker in etf_tickers]
+        if mode == 'except_etf':
+            mkt_ticker = self.make_refined_data()
+            refined_ticker = [i for i in mkt_ticker if i not in etf_tickers_list]
+        else:
+            refined_ticker = self.make_refined_data()
         kp_tickers_list = [ticker.split('|')[0] for ticker in kp_tickers if ticker.split('|')[0] in refined_ticker]
         kd_tickers_list = [ticker.split('|')[0] for ticker in kd_tickers if ticker.split('|')[0] in refined_ticker]
         for ticker in kp_tickers:
             kp_tickers_dict[ticker.split('|')[0]] = ticker.split('|')[1]
         for ticker in kd_tickers:
             kd_tickers_dict[ticker.split('|')[0]] = ticker.split('|')[1]
-        return kp_tickers_list, kd_tickers_list, kp_tickers_dict, kd_tickers_dict
+        for ticker in etf_tickers:
+            etf_tickers_dict[ticker.split('|')[0]] = ticker.split('|')[1]
+        return kp_tickers_list, kd_tickers_list, etf_tickers_list, kp_tickers_dict, kd_tickers_dict, etf_tickers_dict
 
     def merge_index_data(self):
         bm, size, style, industry = self.set_index_lists()
 
-        bm_data = self.make_index_data(self.r, bm)
-        size_data = self.make_index_data(self.r, size)
-        style_data = self.make_index_data(self.r, style)
-        industry_data = self.make_index_data(self.r, industry)
+        bm_data = self.make_index_data(self.redis.redis_client, bm)
+        size_data = self.make_index_data(self.redis.redis_client, size)
+        style_data = self.make_index_data(self.redis.redis_client, style)
+        industry_data = self.make_index_data(self.redis.redis_client, industry)
 
         index_keys = bm + size + style + industry
 
@@ -263,18 +278,25 @@ class KeystQuant(object):
         periodic_close = data.resample(period)
         return periodic_close
 
-    def make_redis_ohlcv_df(self, mode, kp_tickers_list, kd_tickers_list):
+    # Kospi, Kosdaq, ETF 데이터를 추출
+    def make_redis_ohlcv_df(self, mode, kp_tickers_list, kd_tickers_list, etf_tickers_list):
         make_data_start = True
         if mode == 'kp':
             tickers_list = kp_tickers_list
         elif mode == 'kd':
             tickers_list =  kd_tickers_list
+        elif mode == 'etf':
+            tickers_list =  etf_tickers_list
         else:
             print('choose kp or kd')
+        i = 0
         for ticker in tickers_list:
             # OHLCV 데이터 불러오기
+            i += 1
+            if i % 100 == 0:
+                print(ticker)
             key = ticker + '_OHLCV'
-            ohlcv = pd.read_msgpack(self.r.get(key))
+            ohlcv = self.redis.get_df(key)
             ohlcv.set_index('date', inplace=True)
             ohlcv.index = pd.to_datetime(ohlcv.index)
             ohlcv_df = ohlcv[['adj_prc']]
@@ -282,11 +304,12 @@ class KeystQuant(object):
             ohlcv_df.rename({'adj_prc':ticker}, axis='columns', inplace=True)
             vol_df.rename({'trd_qty':ticker}, axis='columns', inplace=True)
 
-            if make_data_start:
+            if make_data_start==True:
                 total_ohlcv = ohlcv_df
                 total_vol = vol_df
                 make_data_start = False
             else:
                 total_ohlcv = pd.concat([total_ohlcv, ohlcv_df], axis=1)
                 total_vol = pd.concat([total_vol, vol_df], axis=1)
+
         return total_ohlcv, total_vol

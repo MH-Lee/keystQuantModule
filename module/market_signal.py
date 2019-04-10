@@ -88,7 +88,7 @@ class MarketSignal(KeystQuant):
     #### mode = ["mom","m_vol","m_volt_vol"]
     def ms_backtest(self, index_ohlcv, vol_prc, mode, invest_num=10, month_list="all", market = "코스피", period="M", rolling=200, mw=1, vw=1, vpw=1):
         col_dict = {"mom": "mom", "m_volt": "mom + volt", "m_volt_vol":"mom + volt + volume"}
-        _, _, kp_ticker_dict, kd_ticker_dict = self.make_ticker_data(self.kp_tickers, self.kd_tickers)
+        _, _, _, kp_tickers_dict, kd_tickers_dict, etf_tickers_dict = self.make_ticker_data(self.kp_tickers, self.kd_tickers, self.etf_tickers, mode='except_etf')
         if type(month_list) == str:
             month_list = month_list.lower()
         index_df  = pd.DataFrame(index_ohlcv[market])
@@ -97,10 +97,14 @@ class MarketSignal(KeystQuant):
         m_ret = m_ret.iloc[:-1, :]
         if market == "코스피":
             market_ohlcv = self.kp_ohlcv
-            ticker_dict = kp_ticker_dict
+            ticker_dict = kp_tickers_dict
         elif market == "코스닥":
             market_ohlcv = self.kd_ohlcv
-            ticker_dict = kd_ticker_dict
+            ticker_dict = kd_tickers_dict
+        elif market == "ETF":
+            market_ohlcv = self.etf_ohlcv
+            ticker_dict = etf_tickers_dict
+        print(len(ticker_dict))
         invest_num = invest_num
         if month_list == "all" or month_list == "acceler":
             m_ohlcv, m_mom_rank, m_volt_rank, m_vol_prc_rank, m_mom_score, m_volt_score, m_vol_prc_score = self.calc_each_score(market_ohlcv, vol_prc, period, month_list, rolling)
